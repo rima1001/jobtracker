@@ -15,8 +15,9 @@ const LandingPage = () => {
         <div className="nav-links">
           <a href="#features">Features</a>
           <a href="#workflow">How it works</a>
+          <a href="#login">Log in</a>
         </div>
-        <a className="nav-cta" href="#get-started">Get started <span aria-hidden="true">↗</span></a>
+        <a className="nav-cta" href="#signup">Get started <span aria-hidden="true">↗</span></a>
       </nav>
 
       <section className="hero" id="top">
@@ -27,7 +28,7 @@ const LandingPage = () => {
             Less spreadsheet chaos. More forward motion. Keep every application, conversation, and next step in one clear place.
           </p>
           <div className="hero-actions" id="get-started">
-            <a className="button button--primary" href="#features">Organize your search <span aria-hidden="true">→</span></a>
+            <a className="button button--primary" href="#signup">Create your account <span aria-hidden="true">→</span></a>
             <a className="text-link" href="#workflow">See how it works <span aria-hidden="true">↓</span></a>
           </div>
           <div className="social-proof">
