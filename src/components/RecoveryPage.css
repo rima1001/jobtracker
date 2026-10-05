@@ -1,0 +1,12 @@
+.auth-recovery-layout { margin: 10vh auto 0; max-width: 440px; }
+.auth-recovery-panel { padding: 32px; }
+.auth-recovery-notice { background: #eaf6ed; border-radius: 6px; color: #376947; font-size: 14px; line-height: 1.6; margin: 0; padding: 10px 11px; }
+.auth-field-heading { align-items: center; display: flex; justify-content: space-between; }
+.auth-field-heading > span { color: #465650; font-size: 12px; font-weight: 700; }
+.auth-field-heading a { color: #10796f; font-size: 11px; font-weight: 600; text-decoration: none; }
+.auth-field-heading a:hover { color: #0a675f; text-decoration: underline; }
+@media (max-width: 760px) {
+  .auth-recovery-layout { margin-top: 8vh; }
+  .auth-recovery-panel { padding: 25px 20px; }
+  .auth-field-heading a { font-size: 10px; }
+}

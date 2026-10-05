@@ -1,12 +1,16 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const express = require('express');
 const Database = require('better-sqlite3');
+const nodemailer = require('nodemailer');
 
 const packageConfig = require('../package.json');
 const passwordLength = { min: 8, max: 128 };
+const jobStatuses = new Set(['Applied', 'Interview', 'Offer', 'Rejected', 'Withdrawn']);
 const sessionDuration = 7 * 24 * 60 * 60 * 1000;
+const passwordResetDuration = 30 * 60 * 1000;
 const sessionCookie = 'trackwise_session';
 const scrypt = crypto.scrypt;
 
@@ -27,6 +31,8 @@ function createAuthApp({
   databasePath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'data', 'jobtracker.sqlite'),
   basePath = defaultBasePath,
   production = process.env.NODE_ENV === 'production',
+  appOrigin = process.env.APP_ORIGIN || (production ? '' : 'http://localhost:3000'),
+  sendRecoveryEmail: recoveryEmailSender = null,
 } = {}) {
   if (databasePath !== ':memory:') fs.mkdirSync(path.dirname(databasePath), { recursive: true });
   const database = new Database(databasePath);
@@ -46,7 +52,28 @@ function createAuthApp({
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      company_name TEXT NOT NULL,
+      position TEXT NOT NULL,
+      job_url TEXT NOT NULL DEFAULT '',
+      date_applied TEXT NOT NULL,
+      status TEXT NOT NULL,
+      job_description TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS password_resets_expiry_idx ON password_resets(expires_at);
+    CREATE INDEX IF NOT EXISTS jobs_user_date_idx ON jobs(user_id, date_applied DESC);
   `);
 
   const findUserByEmail = database.prepare('SELECT * FROM users WHERE email = ?');
@@ -60,7 +87,69 @@ function createAuthApp({
   `);
   const deleteSession = database.prepare('DELETE FROM sessions WHERE token_hash = ?');
   const deleteExpiredSessions = database.prepare('DELETE FROM sessions WHERE expires_at <= ?');
+  const deleteExpiredPasswordResets = database.prepare('DELETE FROM password_resets WHERE expires_at <= ?');
+  const insertPasswordReset = database.prepare('INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)');
+  const findPasswordReset = database.prepare(`
+    SELECT users.id, users.name, users.email
+    FROM password_resets INNER JOIN users ON users.id = password_resets.user_id
+    WHERE password_resets.token_hash = ? AND password_resets.expires_at > ?
+  `);
+  const deleteUserPasswordResets = database.prepare('DELETE FROM password_resets WHERE user_id = ?');
+  const updatePassword = database.prepare('UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?');
+  const deleteUserSessions = database.prepare('DELETE FROM sessions WHERE user_id = ?');
+  const jobFields = `id, company_name AS company, position, job_url AS jobUrl, date_applied AS dateApplied, status, job_description AS description, notes, created_at AS createdAt, updated_at AS updatedAt`;
+  const listJobs = database.prepare(`SELECT ${jobFields} FROM jobs WHERE user_id = ? ORDER BY date_applied DESC, id DESC`);
+  const findJob = database.prepare(`SELECT ${jobFields} FROM jobs WHERE id = ? AND user_id = ?`);
+  const insertJob = database.prepare(`INSERT INTO jobs (user_id, company_name, position, job_url, date_applied, status, job_description, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const updateJob = database.prepare(`UPDATE jobs SET company_name = ?, position = ?, job_url = ?, date_applied = ?, status = ?, job_description = ?, notes = ?, updated_at = ? WHERE id = ? AND user_id = ?`);
+  const deleteJob = database.prepare('DELETE FROM jobs WHERE id = ? AND user_id = ?');
+  const replacePasswordReset = database.transaction((userId, tokenHash, expiresAt, createdAt) => {
+    deleteUserPasswordResets.run(userId);
+    insertPasswordReset.run(tokenHash, userId, expiresAt, createdAt);
+  });
+  const consumePasswordReset = database.transaction((tokenHash, salt, passwordHash, now) => {
+    const reset = findPasswordReset.get(tokenHash, now);
+    if (!reset) return null;
+    updatePassword.run(salt, passwordHash, reset.id);
+    deleteUserPasswordResets.run(reset.id);
+    deleteUserSessions.run(reset.id);
+    return findUserById.get(reset.id);
+  });
   deleteExpiredSessions.run(Date.now());
+  deleteExpiredPasswordResets.run(Date.now());
+
+  const origin = appOrigin ? new URL(appOrigin) : null;
+  if (origin && !['http:', 'https:'].includes(origin.protocol)) throw new Error('APP_ORIGIN must use HTTP or HTTPS.');
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM && Number.isInteger(smtpPort) && smtpPort > 0 && smtpPort <= 65535);
+  const mailTransport = !recoveryEmailSender && smtpConfigured && origin
+    ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: smtpPort,
+      secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : smtpPort === 465,
+      auth: process.env.SMTP_USER && process.env.SMTP_PASSWORD
+        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
+        : undefined,
+    })
+    : null;
+  const deliverRecoveryEmail = recoveryEmailSender || (mailTransport
+    ? ({ email, name, resetUrl }) => {
+      const escapeHtml = (value) => value.replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[character]);
+      return mailTransport.sendMail({
+        from: process.env.SMTP_FROM,
+        to: email,
+        subject: 'Your Trackwise account details',
+        text: `Hi ${name},\n\nYour Trackwise username is ${email}. Reset your password within 30 minutes using this link:\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`,
+        html: `<p>Hi ${escapeHtml(name)},</p><p>Your Trackwise username is <strong>${escapeHtml(email)}</strong>.</p><p><a href="${escapeHtml(resetUrl)}">Reset your password</a> within 30 minutes.</p><p>If you did not request this, you can ignore this email.</p>`,
+      });
+    }
+    : null);
 
   const app = express();
   app.disable('x-powered-by');
@@ -127,6 +216,46 @@ function createAuthApp({
     return session ? session.slice(sessionCookie.length + 1) : null;
   };
 
+  const requireAuthentication = (request, response, next) => {
+    const token = getSessionToken(request);
+    const user = token ? findSessionUser.get(hashSessionToken(token), Date.now()) : null;
+    if (!user) return response.status(401).json({ error: 'Not signed in.' });
+    request.user = user;
+    return next();
+  };
+
+  const normalizeJobInput = (body, current = {}) => {
+    const value = (field, previous, maximum) => {
+      const input = typeof body?.[field] === 'string' ? body[field].trim() : previous || '';
+      return input.length <= maximum ? input : null;
+    };
+    const company = value('company', current.company, 160);
+    const position = value('position', current.position, 160);
+    const jobUrl = value('jobUrl', current.jobUrl, 2048);
+    const dateApplied = value('dateApplied', current.dateApplied, 10);
+    const description = value('description', current.description, 10000);
+    const notes = value('notes', current.notes, 5000);
+    const status = typeof body?.status === 'string' ? body.status : current.status || 'Applied';
+
+    if (company === null || position === null || jobUrl === null || dateApplied === null || description === null || notes === null) {
+      return { error: 'One or more fields exceed the allowed length.' };
+    }
+    if (!company || !position) return { error: 'Company and position are required.' };
+    const parsedDate = new Date(`${dateApplied}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateApplied) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dateApplied) {
+      return { error: 'Enter a valid application date.' };
+    }
+    if (jobUrl) {
+      try {
+        if (!['http:', 'https:'].includes(new URL(jobUrl).protocol)) throw new Error('Invalid protocol.');
+      } catch {
+        return { error: 'Enter a valid job posting URL.' };
+      }
+    }
+    if (!jobStatuses.has(status)) return { error: 'Choose a valid application status.' };
+    return { value: { company, position, jobUrl, dateApplied, status, description, notes } };
+  };
+
   const createAccountResponse = (user, response) => {
     createSession(user.id, response);
     response.json({ user: safeUser(user) });
@@ -172,19 +301,124 @@ function createAuthApp({
     }
   });
 
-  app.get('/api/auth/me', (request, response) => {
-    const token = getSessionToken(request);
-    if (!token) return response.status(401).json({ error: 'Not signed in.' });
-    const user = findSessionUser.get(hashSessionToken(token), Date.now());
-    if (!user) return response.status(401).json({ error: 'Not signed in.' });
-    return response.json({ user });
+  app.post('/api/auth/recover', rateLimit(5), async (request, response, next) => {
+    try {
+      const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : '';
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return response.status(400).json({ error: 'Enter a valid account email address.' });
+      }
+      if (!deliverRecoveryEmail || !origin) {
+        const error = production
+          ? 'Account recovery email is temporarily unavailable. Please try again later.'
+          : 'Account recovery is not configured. Fill in the SMTP settings in .env and restart the server.';
+        return response.status(503).json({ error });
+      }
+
+      const user = findUserByEmail.get(email);
+      if (user) {
+        const token = crypto.randomBytes(32).toString('base64url');
+        const tokenHash = hashSessionToken(token);
+        const now = Date.now();
+        replacePasswordReset(user.id, tokenHash, now + passwordResetDuration, now);
+        const resetUrl = new URL(`${basePath || ''}/`, origin.origin);
+        resetUrl.hash = `reset/${token}`;
+        try {
+          await deliverRecoveryEmail({ email: user.email, name: user.name, resetUrl: resetUrl.toString() });
+        } catch {
+          console.error('Account recovery email failed to send.');
+        }
+      }
+
+      return response.status(202).json({
+        message: 'If an account uses that email as its username, we’ll send the username and password reset instructions.',
+      });
+    } catch (error) {
+      return next(error);
+    }
   });
+
+  app.post('/api/auth/reset-password', rateLimit(12), async (request, response, next) => {
+    try {
+      const token = typeof request.body?.token === 'string' ? request.body.token : '';
+      const password = typeof request.body?.password === 'string' ? request.body.password : '';
+      if (!token || token.length > 256) return response.status(400).json({ error: 'This recovery link is invalid or expired. Request a new one.' });
+      if (password.length < passwordLength.min || password.length > passwordLength.max) {
+        return response.status(400).json({ error: `Password must be ${passwordLength.min}–${passwordLength.max} characters.` });
+      }
+
+      const tokenHash = hashSessionToken(token);
+      if (!findPasswordReset.get(tokenHash, Date.now())) {
+        return response.status(400).json({ error: 'This recovery link is invalid or expired. Request a new one.' });
+      }
+      const salt = crypto.randomBytes(16);
+      const passwordHash = await derivePasswordHash(password, salt);
+      const user = consumePasswordReset(tokenHash, salt.toString('base64'), passwordHash.toString('base64'), Date.now());
+      if (!user) return response.status(400).json({ error: 'This recovery link is invalid or expired. Request a new one.' });
+      createSession(user.id, response);
+      return response.json({ user: safeUser(user) });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get('/api/auth/me', requireAuthentication, (request, response) => response.json({ user: request.user }));
 
   app.post('/api/auth/logout', (request, response) => {
     const token = getSessionToken(request);
     if (token) deleteSession.run(hashSessionToken(token));
     const { httpOnly, secure, sameSite, path: cookiePath } = cookieOptions;
     response.clearCookie(sessionCookie, { httpOnly, secure, sameSite, path: cookiePath });
+    return response.json({ ok: true });
+  });
+
+  app.get('/api/jobs', requireAuthentication, (request, response) => response.json({ jobs: listJobs.all(request.user.id) }));
+
+  app.post('/api/jobs', requireAuthentication, (request, response) => {
+    const { value, error } = normalizeJobInput(request.body);
+    if (error) return response.status(400).json({ error });
+    const now = Date.now();
+    const result = insertJob.run(
+      request.user.id,
+      value.company,
+      value.position,
+      value.jobUrl,
+      value.dateApplied,
+      value.status,
+      value.description,
+      value.notes,
+      now,
+      now,
+    );
+    return response.status(201).json({ job: findJob.get(Number(result.lastInsertRowid), request.user.id) });
+  });
+
+  app.patch('/api/jobs/:id', requireAuthentication, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) return response.status(400).json({ error: 'Choose a valid job.' });
+    const current = findJob.get(id, request.user.id);
+    if (!current) return response.status(404).json({ error: 'Job not found.' });
+    const { value, error } = normalizeJobInput(request.body, current);
+    if (error) return response.status(400).json({ error });
+    updateJob.run(
+      value.company,
+      value.position,
+      value.jobUrl,
+      value.dateApplied,
+      value.status,
+      value.description,
+      value.notes,
+      Date.now(),
+      id,
+      request.user.id,
+    );
+    return response.json({ job: findJob.get(id, request.user.id) });
+  });
+
+  app.delete('/api/jobs/:id', requireAuthentication, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) return response.status(400).json({ error: 'Choose a valid job.' });
+    const result = deleteJob.run(id, request.user.id);
+    if (!result.changes) return response.status(404).json({ error: 'Job not found.' });
     return response.json({ ok: true });
   });
 
@@ -204,7 +438,11 @@ function createAuthApp({
     return response.status(500).json({ error: 'Something went wrong. Please try again.' });
   });
 
-  const cleanupTimer = setInterval(() => deleteExpiredSessions.run(Date.now()), 60 * 60 * 1000);
+  const cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    deleteExpiredSessions.run(now);
+    deleteExpiredPasswordResets.run(now);
+  }, 60 * 60 * 1000);
   cleanupTimer.unref();
 
   return {

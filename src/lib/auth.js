@@ -16,6 +16,8 @@ const request = async (path, body) => {
 export const register = (details) => request('register', details).then((result) => result.user);
 export const login = (details) => request('login', details).then((result) => result.user);
 export const logout = () => request('logout', {});
+export const requestAccountRecovery = (email) => request('recover', { email });
+export const resetPassword = (details) => request('reset-password', details).then((result) => result.user);
 
 export const getCurrentUser = async () => {
   try {

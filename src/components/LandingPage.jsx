@@ -15,6 +15,7 @@ const LandingPage = () => {
         <div className="nav-links">
           <a href="#features">Features</a>
           <a href="#workflow">How it works</a>
+          <a href="#dashboard">Dashboard</a>
           <a href="#login">Log in</a>
         </div>
         <a className="nav-cta" href="#signup">Get started <span aria-hidden="true">↗</span></a>

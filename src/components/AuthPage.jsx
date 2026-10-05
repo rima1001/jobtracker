@@ -67,7 +67,10 @@ const AuthPage = ({ initialMode = 'login', onAuthenticated }) => {
               <input autoComplete="email" onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required type="email" value={email} />
             </label>
             <label className="auth-field">
-              <span>Password</span>
+              <div className="auth-field-heading">
+                <span>Password</span>
+                {!isSignup && <a href="#recover">Forgot password or username?</a>}
+              </div>
               <input autoComplete={isSignup ? 'new-password' : 'current-password'} maxLength="128" minLength={isSignup ? '8' : undefined} onChange={(event) => setPassword(event.target.value)} placeholder={isSignup ? 'At least 8 characters' : 'Enter your password'} required type="password" value={password} />
             </label>
             {error && <p className="auth-error" role="alert">{error}</p>}
