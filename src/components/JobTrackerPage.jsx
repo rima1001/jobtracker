@@ -20,12 +20,12 @@ const createEmptyJob = () => ({
   notes: '',
 });
 
-const JobTrackerPage = ({ user, onLogout }) => {
+const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
   const [jobs, setJobs] = React.useState([]);
   const [form, setForm] = React.useState(createEmptyJob);
   const [editingId, setEditingId] = React.useState(null);
   const [expandedJobs, setExpandedJobs] = React.useState(() => new Set());
-  const [activeTab, setActiveTab] = React.useState('jobs');
+  const [activeTab, setActiveTab] = React.useState(initialTab);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [updatingId, setUpdatingId] = React.useState(null);
@@ -142,7 +142,10 @@ const JobTrackerPage = ({ user, onLogout }) => {
           <h1>Job Application Helper</h1>
           <p>Keep track of your jobs and save your details in one place.</p>
         </div>
-        <button className="job-signout" onClick={onLogout} type="button">Sign out</button>
+        <div className="job-header-actions">
+          <a className="job-dashboard-link" href="#dashboard">Dashboard</a>
+          <button className="job-signout" onClick={onLogout} type="button">Sign out</button>
+        </div>
       </header>
 
       <nav className="job-tabs" aria-label="Your account pages">
@@ -257,7 +260,6 @@ const JobTrackerPage = ({ user, onLogout }) => {
             <div><dt>Email / username</dt><dd>{user.email}</dd></div>
             <div><dt>Applications tracked</dt><dd>{jobs.length}</dd></div>
           </dl>
-          <button className="profile-signout" onClick={onLogout} type="button">Sign out</button>
         </section>
       )}
       <footer className="job-footer"><span>Trackwise</span><span>Your next chapter, a little less complicated.</span></footer>

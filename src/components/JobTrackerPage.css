@@ -2,6 +2,9 @@
 .job-header, .job-tabs, .job-panel, .job-alert, .job-footer { margin-left: auto; margin-right: auto; max-width: 1040px; }
 .job-header { align-items: center; display: flex; justify-content: space-between; margin-bottom: 22px; }
 .job-header-copy { position: relative; }
+.job-header-actions { align-items: center; display: flex; gap: 18px; }
+.job-dashboard-link { color: #10796f; font-size: 13px; font-weight: 700; text-decoration: none; }
+.job-dashboard-link:hover { color: #0a675f; }
 .job-brand-mark { align-items: center; background: #10796f; border-radius: 9px; color: white; display: inline-flex; font: 800 12px 'Manrope', sans-serif; height: 26px; justify-content: center; position: absolute; right: calc(100% + 9px); top: 2px; width: 26px; }
 .job-header h1 { color: #20332e; font: 700 27px 'Manrope', sans-serif; letter-spacing: -.55px; margin: 0; }
 .job-header p { color: #73827c; font-size: 15px; margin: 6px 0 0; }
@@ -74,6 +77,8 @@
   .job-header, .job-tabs, .job-panel, .job-alert, .job-footer { max-width: 100%; }
   .job-header h1 { font-size: 22px; }
   .job-header p { font-size: 13px; max-width: 275px; }
+  .job-header-actions { gap: 10px; }
+  .job-dashboard-link, .job-signout { font-size: 11px; }
   .job-brand-mark { display: none; }
   .job-panel { padding: 15px; }
   .job-form-row { grid-template-columns: 1fr; }
