@@ -120,9 +120,16 @@ test('stores jobs per user and supports creating, updating, and deleting them', 
   const cannotEditOtherJob = await jobRequest('PATCH', `/${created.id}`, { status: 'Interview' }, secondAccountCookie);
   assert.equal(cannotEditOtherJob.status, 404);
 
-  const updatedResponse = await jobRequest('PATCH', `/${created.id}`, { status: 'Interview' }, loginSessionCookie);
+  const missingInterviewTime = await jobRequest('PATCH', `/${created.id}`, { status: 'Interview' }, loginSessionCookie);
+  assert.equal(missingInterviewTime.status, 400);
+  const updatedResponse = await jobRequest('PATCH', `/${created.id}`, {
+    status: 'Interview',
+    interviewAt: '2026-10-12T14:30',
+  }, loginSessionCookie);
   assert.equal(updatedResponse.status, 200);
-  assert.equal((await updatedResponse.json()).job.status, 'Interview');
+  const updatedJob = (await updatedResponse.json()).job;
+  assert.equal(updatedJob.status, 'Interview');
+  assert.equal(updatedJob.interviewAt, '2026-10-12T14:30');
   const deleted = await jobRequest('DELETE', `/${created.id}`, undefined, loginSessionCookie);
   assert.equal(deleted.status, 200);
   assert.deepEqual((await (await jobRequest('GET', '', undefined, loginSessionCookie)).json()).jobs, []);
@@ -196,9 +203,24 @@ test('migrates existing single-resume accounts and preserves the uploaded PDF', 
       pdf_data BLOB NOT NULL,
       uploaded_at INTEGER NOT NULL
     );
+    CREATE TABLE jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      company_name TEXT NOT NULL,
+      position TEXT NOT NULL,
+      job_url TEXT NOT NULL DEFAULT '',
+      date_applied TEXT NOT NULL,
+      status TEXT NOT NULL,
+      job_description TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
   legacyDatabase.prepare('INSERT INTO users (name, email, password_salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?)')
     .run('Alex Morgan', 'alex@example.com', 'salt', 'hash', Date.now());
+  legacyDatabase.prepare('INSERT INTO jobs (user_id, company_name, position, date_applied, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(1, 'Bright Dental', 'Office assistant', '2026-10-01', 'Applied', Date.now(), Date.now());
   const oldPdf = Buffer.from('%PDF-1.7\nexisting resume\n%%EOF');
   legacyDatabase.prepare('INSERT INTO resumes (user_id, file_name, file_size, pdf_data, uploaded_at) VALUES (?, ?, ?, ?, ?)')
     .run(1, 'existing-resume.pdf', oldPdf.length, oldPdf, Date.now());
@@ -210,6 +232,9 @@ test('migrates existing single-resume accounts and preserves the uploaded PDF', 
     assert.equal(migrated.length, 1);
     assert.equal(migrated[0].file_name, 'existing-resume.pdf');
     assert.deepEqual(migrated[0].pdf_data, oldPdf);
+
+    const migratedJob = upgradedApp.database.prepare('SELECT position, interview_at FROM jobs WHERE user_id = ?').get(1);
+    assert.deepEqual(migratedJob, { position: 'Office assistant', interview_at: '' });
 
     upgradedApp.database.prepare('INSERT INTO resumes (user_id, file_name, file_size, pdf_data, uploaded_at) VALUES (?, ?, ?, ?, ?)')
       .run(1, 'second-resume.pdf', 5, Buffer.from('%PDF-'), Date.now());

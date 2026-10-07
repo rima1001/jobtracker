@@ -67,6 +67,7 @@ function createAuthApp({
       job_url TEXT NOT NULL DEFAULT '',
       date_applied TEXT NOT NULL,
       status TEXT NOT NULL,
+      interview_at TEXT NOT NULL DEFAULT '',
       job_description TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL,
@@ -76,6 +77,11 @@ function createAuthApp({
     CREATE INDEX IF NOT EXISTS password_resets_expiry_idx ON password_resets(expires_at);
     CREATE INDEX IF NOT EXISTS jobs_user_date_idx ON jobs(user_id, date_applied DESC);
   `);
+
+  const jobColumns = database.pragma('table_info(jobs)');
+  if (!jobColumns.some((column) => column.name === 'interview_at')) {
+    database.exec("ALTER TABLE jobs ADD COLUMN interview_at TEXT NOT NULL DEFAULT ''");
+  }
 
   const createResumesTable = `
     CREATE TABLE resumes (
@@ -125,11 +131,11 @@ function createAuthApp({
   const deleteUserPasswordResets = database.prepare('DELETE FROM password_resets WHERE user_id = ?');
   const updatePassword = database.prepare('UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?');
   const deleteUserSessions = database.prepare('DELETE FROM sessions WHERE user_id = ?');
-  const jobFields = `id, company_name AS company, position, job_url AS jobUrl, date_applied AS dateApplied, status, job_description AS description, notes, created_at AS createdAt, updated_at AS updatedAt`;
+  const jobFields = `id, company_name AS company, position, job_url AS jobUrl, date_applied AS dateApplied, status, interview_at AS interviewAt, job_description AS description, notes, created_at AS createdAt, updated_at AS updatedAt`;
   const listJobs = database.prepare(`SELECT ${jobFields} FROM jobs WHERE user_id = ? ORDER BY date_applied DESC, id DESC`);
   const findJob = database.prepare(`SELECT ${jobFields} FROM jobs WHERE id = ? AND user_id = ?`);
-  const insertJob = database.prepare(`INSERT INTO jobs (user_id, company_name, position, job_url, date_applied, status, job_description, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const updateJob = database.prepare(`UPDATE jobs SET company_name = ?, position = ?, job_url = ?, date_applied = ?, status = ?, job_description = ?, notes = ?, updated_at = ? WHERE id = ? AND user_id = ?`);
+  const insertJob = database.prepare(`INSERT INTO jobs (user_id, company_name, position, job_url, date_applied, status, interview_at, job_description, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const updateJob = database.prepare(`UPDATE jobs SET company_name = ?, position = ?, job_url = ?, date_applied = ?, status = ?, interview_at = ?, job_description = ?, notes = ?, updated_at = ? WHERE id = ? AND user_id = ?`);
   const deleteJob = database.prepare('DELETE FROM jobs WHERE id = ? AND user_id = ?');
   const resumeMetadataFields = 'id, file_name AS fileName, file_size AS fileSize, uploaded_at AS uploadedAt';
   const listResumes = database.prepare(`SELECT ${resumeMetadataFields} FROM resumes WHERE user_id = ? ORDER BY uploaded_at DESC, id DESC`);
@@ -302,17 +308,26 @@ function createAuthApp({
     const position = value('position', current.position, 160);
     const jobUrl = value('jobUrl', current.jobUrl, 2048);
     const dateApplied = value('dateApplied', current.dateApplied, 10);
+    const interviewAt = value('interviewAt', current.interviewAt, 16);
     const description = value('description', current.description, 10000);
     const notes = value('notes', current.notes, 5000);
     const status = typeof body?.status === 'string' ? body.status : current.status || 'Applied';
 
-    if (company === null || position === null || jobUrl === null || dateApplied === null || description === null || notes === null) {
+    if (company === null || position === null || jobUrl === null || dateApplied === null || interviewAt === null || description === null || notes === null) {
       return { error: 'One or more fields exceed the allowed length.' };
     }
     if (!company || !position) return { error: 'Company and position are required.' };
     const parsedDate = new Date(`${dateApplied}T00:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateApplied) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dateApplied) {
       return { error: 'Enter a valid application date.' };
+    }
+    if (status === 'Interview') {
+      const match = interviewAt.match(/^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d)$/);
+      if (!match) return { error: 'Enter the interview date and time.' };
+      const interviewDate = new Date(`${match[1]}T00:00:00Z`);
+      if (Number.isNaN(interviewDate.getTime()) || interviewDate.toISOString().slice(0, 10) !== match[1]) {
+        return { error: 'Enter a valid interview date and time.' };
+      }
     }
     if (jobUrl) {
       try {
@@ -322,7 +337,7 @@ function createAuthApp({
       }
     }
     if (!jobStatuses.has(status)) return { error: 'Choose a valid application status.' };
-    return { value: { company, position, jobUrl, dateApplied, status, description, notes } };
+    return { value: { company, position, jobUrl, dateApplied, status, interviewAt, description, notes } };
   };
 
   const createAccountResponse = (user, response) => {
@@ -453,6 +468,7 @@ function createAuthApp({
       value.jobUrl,
       value.dateApplied,
       value.status,
+      value.interviewAt,
       value.description,
       value.notes,
       now,
@@ -474,6 +490,7 @@ function createAuthApp({
       value.jobUrl,
       value.dateApplied,
       value.status,
+      value.interviewAt,
       value.description,
       value.notes,
       Date.now(),

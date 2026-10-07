@@ -10,12 +10,20 @@ const getToday = () => {
   return new Date(today.getTime() - localOffset).toISOString().slice(0, 10);
 };
 
+const formatInterviewAt = (value) => {
+  const parsedDate = new Date(value);
+  return Number.isNaN(parsedDate.getTime())
+    ? value
+    : parsedDate.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+};
+
 const createEmptyJob = () => ({
   company: '',
   position: '',
   jobUrl: '',
   dateApplied: getToday(),
   status: 'Applied',
+  interviewAt: '',
   description: '',
   notes: '',
 });
@@ -29,6 +37,9 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [updatingId, setUpdatingId] = React.useState(null);
+  const [interviewCandidate, setInterviewCandidate] = React.useState(null);
+  const [interviewAt, setInterviewAt] = React.useState('');
+  const [interviewError, setInterviewError] = React.useState('');
   const [error, setError] = React.useState('');
   const [message, setMessage] = React.useState('');
 
@@ -85,6 +96,7 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
       jobUrl: job.jobUrl,
       dateApplied: job.dateApplied,
       status: job.status,
+      interviewAt: job.interviewAt || '',
       description: job.description,
       notes: job.notes,
     });
@@ -101,13 +113,37 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
   };
 
   const handleStatusChange = async (job, status) => {
-    setUpdatingId(job.id);
     setError('');
+    if (status === 'Interview') {
+      setInterviewCandidate(job);
+      setInterviewAt(job.interviewAt || '');
+      setInterviewError('');
+      return;
+    }
+    setUpdatingId(job.id);
     try {
       const updated = await updateJob(job.id, { status });
       setJobs((current) => current.map((item) => item.id === updated.id ? updated : item));
     } catch (requestError) {
       setError(requestError.message);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleInterviewScheduleSubmit = async (event) => {
+    event.preventDefault();
+    if (!interviewCandidate) return;
+    setUpdatingId(interviewCandidate.id);
+    setInterviewError('');
+    try {
+      const updated = await updateJob(interviewCandidate.id, { status: 'Interview', interviewAt });
+      setJobs((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setInterviewCandidate(null);
+      setInterviewAt('');
+      setMessage('Interview date and time saved.');
+    } catch (requestError) {
+      setInterviewError(requestError.message);
     } finally {
       setUpdatingId(null);
     }
@@ -194,6 +230,12 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
                   </select>
                 </label>
               </div>
+              {form.status === 'Interview' && (
+                <label className="job-field">
+                  <span>Interview date &amp; time</span>
+                  <input name="interviewAt" onChange={handleFieldChange} required type="datetime-local" value={form.interviewAt} />
+                </label>
+              )}
               <label className="job-field">
                 <span>Job description <small>(optional)</small></span>
                 <textarea maxLength="10000" name="description" onChange={handleFieldChange} placeholder="Copy the text from the job posting and paste it here" rows="4" value={form.description} />
@@ -223,6 +265,7 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
                         <div className="job-item-title">
                           <h3>{job.position}</h3>
                           <p>{job.company} <span aria-hidden="true">·</span> applied {job.dateApplied}</p>
+                          {job.status === 'Interview' && job.interviewAt && <p className="job-interview-time">Interview scheduled {formatInterviewAt(job.interviewAt)}</p>}
                         </div>
                         <select aria-label={`Status for ${job.position} at ${job.company}`} className={`job-status job-status--${statusClass}`} disabled={updatingId === job.id} onChange={(event) => handleStatusChange(job, event.target.value)} value={job.status}>
                           {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
@@ -264,6 +307,28 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
         </section>
       )}
       <footer className="job-footer"><span>Trackwise</span><span>Your next chapter, a little less complicated.</span></footer>
+      {interviewCandidate && (
+        <div className="job-dialog-backdrop">
+          <section aria-labelledby="interview-dialog-title" aria-modal="true" className="job-interview-dialog" role="dialog">
+            <span aria-hidden="true" className="interview-dialog-icon">◎</span>
+            <h2 id="interview-dialog-title">Schedule the interview</h2>
+            <p>{interviewCandidate.company} · {interviewCandidate.position}</p>
+            <form onSubmit={handleInterviewScheduleSubmit}>
+              <label className="job-field">
+                <span>Interview date &amp; time</span>
+                <input autoFocus name="interviewAt" onChange={(event) => setInterviewAt(event.target.value)} required type="datetime-local" value={interviewAt} />
+              </label>
+              {interviewError && <p className="job-dialog-error" role="alert">{interviewError}</p>}
+              <div className="job-dialog-actions">
+                <button className="job-dialog-cancel" disabled={updatingId === interviewCandidate.id} onClick={() => { setInterviewCandidate(null); setInterviewAt(''); setInterviewError(''); }} type="button">Cancel</button>
+                <button className="job-dialog-save" disabled={updatingId === interviewCandidate.id || !interviewAt} type="submit">
+                  {updatingId === interviewCandidate.id ? 'Saving…' : 'Save interview time'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   );
 };
