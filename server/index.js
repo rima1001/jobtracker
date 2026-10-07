@@ -138,6 +138,7 @@ function createAuthApp({
   const findResumeFile = database.prepare('SELECT file_name AS fileName, pdf_data AS pdfData FROM resumes WHERE id = ? AND user_id = ?');
   const findLatestResumeFile = database.prepare('SELECT file_name AS fileName, pdf_data AS pdfData FROM resumes WHERE user_id = ? ORDER BY uploaded_at DESC, id DESC LIMIT 1');
   const saveResume = database.prepare('INSERT INTO resumes (user_id, file_name, file_size, pdf_data, uploaded_at) VALUES (?, ?, ?, ?, ?)');
+  const deleteResume = database.prepare('DELETE FROM resumes WHERE id = ? AND user_id = ?');
   const uploadResume = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0 },
@@ -497,6 +498,13 @@ function createAuthApp({
   app.post('/api/resumes', requireAuthentication, uploadResume.single('resume'), handleResumeUpload);
   app.get('/api/resumes/:id/view', requireAuthentication, (request, response) => sendResumeFile(request, response, true));
   app.get('/api/resumes/:id/download', requireAuthentication, (request, response) => sendResumeFile(request, response, false));
+  app.delete('/api/resumes/:id', requireAuthentication, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) return response.status(400).json({ error: 'Choose a valid resume.' });
+    const result = deleteResume.run(id, request.user.id);
+    if (!result.changes) return response.status(404).json({ error: 'Resume not found.' });
+    return response.json({ ok: true });
+  });
 
   app.get('/api/resume', requireAuthentication, (request, response) => {
     return response.json({ resume: findLatestResumeMetadata.get(request.user.id) || null });

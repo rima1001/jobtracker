@@ -11,7 +11,7 @@ npm start
 
 The React app runs on port 3000 and proxies `/api` requests to the server on port 4000. The database at `data/jobtracker.sqlite` stores accounts, sessions, per-user job applications, and private resume files, and is intentionally excluded from Git.
 
-The authenticated **My Resume** page allows each account to attach multiple PDFs, up to 10 MB each, and open or download them later. Resume file bytes are stored in SQLite, existing single-resume uploads are migrated, and each file is accessible only to its owner.
+The authenticated **My Resume** page allows each account to attach multiple PDFs, up to 10 MB each, and open or delete them later. Resume file bytes are stored in SQLite, existing single-resume uploads are migrated, and each file is accessible only to its owner.
 
 ## Production
 

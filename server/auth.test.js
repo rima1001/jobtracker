@@ -167,6 +167,12 @@ test('attaches and downloads private PDF resumes per user', async () => {
   const listedResumes = (await list.json()).resumes;
   assert.equal(listedResumes.length, 2);
   assert.deepEqual(new Set(listedResumes.map((resume) => resume.fileName)), new Set(['alex-resume.pdf', 'updated-resume.pdf']));
+
+  assert.equal((await resumeRequest('DELETE', `/${storedResume.id}`)).status, 401);
+  assert.equal((await resumeRequest('DELETE', `/${secondResume.id}`, secondAccountCookie)).status, 404);
+  assert.equal((await resumeRequest('DELETE', `/${storedResume.id}`, loginSessionCookie)).status, 200);
+  const remaining = await resumeRequest('GET', '', loginSessionCookie);
+  assert.deepEqual((await remaining.json()).resumes.map((resume) => resume.id), [secondResume.id]);
 });
 
 test('migrates existing single-resume accounts and preserves the uploaded PDF', () => {

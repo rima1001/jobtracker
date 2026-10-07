@@ -1,5 +1,5 @@
 import React from 'react';
-import { getResumeDownloadUrl, getResumeViewUrl, getResumes, uploadResume } from '../lib/resumes';
+import { deleteResume, getResumeViewUrl, getResumes, uploadResume } from '../lib/resumes';
 import './ResumePage.css';
 
 const maxResumeBytes = 10 * 1024 * 1024;
@@ -8,12 +8,11 @@ const formatBytes = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2).replace(/0+
 
 const ResumePage = ({ user, onLogout }) => {
   const [resumes, setResumes] = React.useState([]);
-  const [file, setFile] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [uploading, setUploading] = React.useState(false);
   const [fileAction, setFileAction] = React.useState('');
   const [error, setError] = React.useState('');
-  const [notice, setNotice] = React.useState('');
+  const [deleteCandidate, setDeleteCandidate] = React.useState(null);
   const fileInput = React.useRef(null);
 
   React.useEffect(() => {
@@ -38,30 +37,24 @@ const ResumePage = ({ user, onLogout }) => {
     const selected = event.target.files?.[0] || null;
     setError('');
     setNotice('');
-    if (!selected) {
-      setFile(null);
-      return;
-    }
+    if (!selected) return;
     if (!selected.name.toLowerCase().endsWith('.pdf') || (selected.type && selected.type !== 'application/pdf')) {
       setError('Choose a PDF file.');
       event.target.value = '';
-      setFile(null);
       return;
     }
     if (selected.size > maxResumeBytes) {
       setError('Resume files must be 10 MB or smaller.');
       event.target.value = '';
-      setFile(null);
       return;
     }
-    setFile(selected);
     setUploading(true);
+    setNotice(`Uploading ${selected.name}…`);
     try {
       const savedResume = await uploadResume(selected);
       setResumes((current) => [savedResume, ...current]);
-      setFile(null);
       input.value = '';
-      setNotice('Your resume has been added securely to your account.');
+      setNotice(`${selected.name} has been added to your resumes.`);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -105,19 +98,15 @@ const ResumePage = ({ user, onLogout }) => {
     }
   };
 
-  const handleDownloadResume = async (resume) => {
-    setFileAction(`download-${resume.id}`);
+  const confirmDeleteResume = async () => {
+    if (!deleteCandidate) return;
+    const resume = deleteCandidate;
+    setFileAction(`delete-${resume.id}`);
     setError('');
     try {
-      const pdf = await fetchPdf(getResumeDownloadUrl(resume.id));
-      const pdfUrl = URL.createObjectURL(pdf);
-      const downloadLink = document.createElement('a');
-      downloadLink.href = pdfUrl;
-      downloadLink.download = resume.fileName;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      downloadLink.remove();
-      window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+      await deleteResume(resume.id);
+      setResumes((current) => current.filter((item) => item.id !== resume.id));
+      setDeleteCandidate(null);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -129,7 +118,9 @@ const ResumePage = ({ user, onLogout }) => {
     <main className="resume-page">
       <header className="resume-header">
         <a className="brand" href="#top"><span className="brand-mark" aria-hidden="true">T</span><span>trackwise</span></a>
-        <button className="resume-signout" onClick={onLogout} type="button">Sign out</button>
+        <div className="resume-header-actions">
+          <button className="resume-signout" onClick={onLogout} type="button">Sign out</button>
+        </div>
       </header>
 
       <nav className="resume-nav" aria-label="Your workspace">
@@ -140,18 +131,25 @@ const ResumePage = ({ user, onLogout }) => {
       </nav>
 
       <section className="resume-content">
-        <span className="resume-eyebrow">YOUR CAREER MATERIALS</span>
-        <h1>My Resume</h1>
-        <p className="resume-intro">Keep multiple resume versions attached to your job search. Only you can access these files.</p>
+        <div className="resume-content-heading">
+          <div>
+            <span className="resume-eyebrow">YOUR CAREER MATERIALS</span>
+            <h1>My Resume</h1>
+          </div>
+          <button className="resume-add-trigger" disabled={uploading} onClick={() => fileInput.current?.click()} type="button">
+            {uploading ? 'Uploading…' : resumes.length ? 'Add another resume' : 'Add resume'} <span aria-hidden="true">＋</span>
+          </button>
+          <input aria-label="Choose a PDF resume" className="resume-file-input" accept=".pdf,application/pdf" disabled={uploading} onChange={handleFileChange} ref={fileInput} type="file" />
+        </div>
+        <p className="resume-intro">Keep multiple resume versions attached to your job search. Click a filename to open its PDF.</p>
 
         {error && <p className="resume-message resume-message--error" role="alert">{error}</p>}
-        {notice && <p className="resume-message resume-message--success" role="status">{notice}</p>}
 
         {loading ? <p className="resume-loading">Loading your resume…</p> : (
           <>
-            {resumes.length > 0 && (
-              <section aria-label="Uploaded resumes" className="resume-list">
-                {resumes.map((resume) => (
+            <section aria-label="Uploaded resumes" className="resume-list">
+              {resumes.length ? (
+                resumes.map((resume) => (
                   <article className="resume-current-file" key={resume.id}>
                     <span aria-hidden="true" className="resume-file-icon">PDF</span>
                     <div className="resume-file-details">
@@ -160,31 +158,38 @@ const ResumePage = ({ user, onLogout }) => {
                       </button>
                       <span>{formatBytes(resume.fileSize)} <i aria-hidden="true">·</i> Uploaded {new Date(resume.uploadedAt).toLocaleDateString()}</span>
                     </div>
-                    <button className="resume-download" disabled={Boolean(fileAction)} onClick={() => handleDownloadResume(resume)} type="button">
-                      {fileAction === `download-${resume.id}` ? 'Downloading…' : 'Download PDF'}
+                    <button aria-label={`Delete ${resume.fileName}`} className="resume-delete-button" disabled={Boolean(fileAction || deleteCandidate)} onClick={() => setDeleteCandidate(resume)} type="button">
+                      Delete
                     </button>
                   </article>
-                ))}
-              </section>
-            )}
-
-            <section className="resume-upload-card">
-              <div className="resume-upload-copy">
-                <span className="resume-upload-symbol" aria-hidden="true">↑</span>
-                <div>
-              <button className="resume-add-trigger" disabled={uploading} onClick={() => fileInput.current?.click()} type="button">
-                {resumes.length ? 'Add another resume' : 'Add your resume'} <span aria-hidden="true">＋</span>
-              </button>
-                  <p>Choose a PDF up to 10 MB. It uploads automatically.</p>
+                ))
+              ) : (
+                <div className="resume-empty-state">
+                  <span aria-hidden="true">PDF</span>
+                  <strong>No resumes attached yet</strong>
+                  <p>Select <b>Add resume</b> above to choose a PDF. It uploads automatically.</p>
                 </div>
-              </div>
-              <input aria-label="Choose a PDF resume" className="resume-file-input" accept=".pdf,application/pdf" disabled={uploading} onChange={handleFileChange} ref={fileInput} type="file" />
-              {file && <p className="resume-selected-file"><span>{file.name}</span><small>{uploading ? 'Uploading…' : formatBytes(file.size)}</small></p>}
+              )}
             </section>
           </>
         )}
         <p className="resume-account-note">Signed in as {user.email}</p>
       </section>
+      {deleteCandidate && (
+        <div className="resume-dialog-backdrop">
+          <section aria-labelledby="resume-delete-title" aria-modal="true" className="resume-delete-dialog" role="alertdialog">
+            <span aria-hidden="true" className="resume-delete-warning">!</span>
+            <h2 id="resume-delete-title">Delete this resume?</h2>
+            <p><strong>{deleteCandidate.fileName}</strong> will be permanently removed from your account.</p>
+            <div className="resume-delete-actions">
+              <button className="resume-delete-cancel" disabled={Boolean(fileAction)} onClick={() => setDeleteCandidate(null)} type="button">Cancel</button>
+              <button className="resume-delete-confirm" disabled={Boolean(fileAction)} onClick={confirmDeleteResume} type="button">
+                {fileAction === `delete-${deleteCandidate.id}` ? 'Deleting…' : 'Delete resume'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 };

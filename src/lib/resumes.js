@@ -9,6 +9,11 @@ const readResult = async (response) => {
 
 export const getResumes = () => fetch(resumesEndpoint, { credentials: 'same-origin' }).then(readResult).then((result) => result.resumes);
 
+export const deleteResume = (id) => fetch(`${resumesEndpoint}/${id}`, {
+  method: 'DELETE',
+  credentials: 'same-origin',
+}).then(readResult);
+
 export const uploadResume = (file) => {
   const body = new FormData();
   body.append('resume', file);

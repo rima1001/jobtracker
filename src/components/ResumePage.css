@@ -7,6 +7,7 @@
 .resume-nav a:hover { color: #10796f; }
 .resume-nav a.is-active { border-color: #10796f; color: #10796f; }
 .resume-content { margin: 42px auto 0; max-width: 760px; }
+.resume-content-heading { align-items: center; display: flex; gap: 16px; justify-content: space-between; }
 .resume-eyebrow { color: #84948c; display: block; font-size: 10px; font-weight: 700; letter-spacing: 1.25px; }
 .resume-content h1 { color: #263732; font: 700 34px 'Manrope', sans-serif; letter-spacing: -1px; margin: 9px 0 5px; }
 .resume-intro { color: #73827c; font-size: 15px; line-height: 1.6; margin: 0; }
@@ -20,24 +21,29 @@
 .resume-file-name:disabled { cursor: wait; opacity: .65; }
 .resume-file-details span { color: #819088; font-size: 12px; }
 .resume-file-details i { color: #aeb9b2; font-style: normal; padding: 0 4px; }
-.resume-download { background: #eaf4ef; border: 0; border-radius: 6px; color: #10796f; cursor: pointer; flex: 0 0 auto; font: 700 12px 'DM Sans', sans-serif; margin-left: auto; padding: 10px 12px; }
-.resume-download:hover { background: #ddefe7; }
-.resume-download:disabled { cursor: wait; opacity: .65; }
-.resume-upload-card { background: #fff; border: 1px solid #dfe8e3; border-radius: 10px; box-shadow: 0 4px 14px #26373208; display: grid; gap: 16px; margin-top: 16px; padding: 22px; }
-.resume-upload-copy { align-items: center; display: flex; gap: 12px; }
-.resume-upload-symbol { align-items: center; background: #eaf4ef; border-radius: 9px; color: #10796f; display: flex; font-size: 22px; height: 42px; justify-content: center; width: 42px; }
-.resume-add-trigger { background: transparent; border: 0; color: #10796f; cursor: pointer; font: 700 18px 'Manrope', sans-serif; padding: 0; text-align: left; }
-.resume-add-trigger:hover { color: #0a675f; text-decoration: underline; text-underline-offset: 3px; }
+.resume-delete-button { background: #fff2ef; border: 0; border-radius: 6px; color: #a6594d; cursor: pointer; flex: 0 0 auto; font: 700 12px 'DM Sans', sans-serif; margin-left: auto; padding: 10px 12px; }
+.resume-delete-button:hover:not(:disabled) { background: #ffe5df; }
+.resume-delete-button:disabled { cursor: wait; opacity: .65; }
+.resume-dialog-backdrop { align-items: center; background: #1d302b66; display: flex; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 20; }
+.resume-delete-dialog { background: #fff; border: 1px solid #dfe8e3; border-radius: 12px; box-shadow: 0 24px 70px #20332e33; max-width: 420px; padding: 26px; width: 100%; }
+.resume-delete-warning { align-items: center; background: #fff0ed; border-radius: 50%; color: #a6594d; display: flex; font: 700 16px 'Manrope', sans-serif; height: 38px; justify-content: center; width: 38px; }
+.resume-delete-dialog h2 { color: #263732; font: 700 20px 'Manrope', sans-serif; margin: 17px 0 7px; }
+.resume-delete-dialog p { color: #73827c; font-size: 14px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.resume-delete-dialog p strong { color: #34443e; }
+.resume-delete-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px; }
+.resume-delete-cancel, .resume-delete-confirm { border: 0; border-radius: 6px; cursor: pointer; font: 700 13px 'DM Sans', sans-serif; min-height: 40px; padding: 0 14px; }
+.resume-delete-cancel { background: #f3f7f5; color: #53645b; }
+.resume-delete-confirm { background: #b34f43; color: #fff; }
+.resume-delete-confirm:hover:not(:disabled) { background: #9d4036; }
+.resume-delete-cancel:disabled, .resume-delete-confirm:disabled { cursor: wait; opacity: .65; }
+.resume-add-trigger { align-items: center; background: #10796f; border: 0; border-radius: 7px; color: #fff; cursor: pointer; display: inline-flex; flex: 0 0 auto; font: 700 14px 'DM Sans', sans-serif; gap: 7px; padding: 12px 15px; }
+.resume-add-trigger:hover:not(:disabled) { background: #0a675f; }
 .resume-add-trigger:focus-visible { border-radius: 3px; outline: 3px solid #c7e6dc; outline-offset: 3px; }
 .resume-add-trigger:disabled { cursor: wait; opacity: .6; }
-.resume-add-trigger span { font: 500 20px 'DM Sans', sans-serif; margin-left: 4px; }
-.resume-upload-copy p { color: #819088; font-size: 13px; margin: 5px 0 0; }
+.resume-add-trigger span { font: 500 18px 'DM Sans', sans-serif; }
 .resume-file-input { display: none; }
-.resume-selected-file { align-items: center; background: #f7f9f8; border: 1px solid #dfe8e3; border-radius: 6px; color: #34443e; display: flex; font-size: 13px; gap: 12px; justify-content: space-between; margin: 0; overflow-wrap: anywhere; padding: 11px 12px; }
-.resume-selected-file small { color: #819088; flex: 0 0 auto; font-size: 11px; }
 .resume-message { border-radius: 7px; font-size: 14px; line-height: 1.5; margin: 18px 0 0; padding: 12px 14px; }
 .resume-message--error { background: #fff0ed; color: #a54536; }
-.resume-message--success { background: #eaf6ed; color: #376947; }
 .resume-loading { color: #819088; font-size: 14px; padding: 28px 0; }
 .resume-account-note { color: #89968f; font-size: 12px; margin: 20px 0 0; }
 @media (max-width: 680px) {
@@ -45,9 +51,10 @@
   .resume-nav { gap: 16px; margin-top: 18px; overflow-x: auto; }
   .resume-nav a { font-size: 12px; white-space: nowrap; }
   .resume-content { margin-top: 30px; }
+  .resume-content-heading { align-items: flex-start; }
   .resume-content h1 { font-size: 30px; }
   .resume-intro { font-size: 14px; }
   .resume-current-file { align-items: flex-start; flex-wrap: wrap; }
-  .resume-download { margin-left: 60px; }
-  .resume-upload-card { padding: 17px; }
+  .resume-delete-button { margin-left: 60px; }
+  .resume-add-trigger { font-size: 12px; padding: 10px 11px; }
 }
