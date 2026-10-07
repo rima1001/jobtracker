@@ -4,6 +4,7 @@ const path = require('node:path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const express = require('express');
 const Database = require('better-sqlite3');
+const multer = require('multer');
 const nodemailer = require('nodemailer');
 
 const packageConfig = require('../package.json');
@@ -76,6 +77,33 @@ function createAuthApp({
     CREATE INDEX IF NOT EXISTS jobs_user_date_idx ON jobs(user_id, date_applied DESC);
   `);
 
+  const createResumesTable = `
+    CREATE TABLE resumes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      pdf_data BLOB NOT NULL,
+      uploaded_at INTEGER NOT NULL
+    )
+  `;
+  const existingResumeColumns = database.pragma('table_info(resumes)');
+  if (existingResumeColumns.length && !existingResumeColumns.some((column) => column.name === 'id')) {
+    const migrateLegacyResume = database.transaction(() => {
+      database.exec('ALTER TABLE resumes RENAME TO resumes_legacy');
+      database.exec(createResumesTable);
+      database.exec(`
+        INSERT INTO resumes (user_id, file_name, file_size, pdf_data, uploaded_at)
+        SELECT user_id, file_name, file_size, pdf_data, uploaded_at FROM resumes_legacy
+      `);
+      database.exec('DROP TABLE resumes_legacy');
+    });
+    migrateLegacyResume();
+  } else if (!existingResumeColumns.length) {
+    database.exec(createResumesTable);
+  }
+  database.exec('CREATE INDEX IF NOT EXISTS resumes_user_uploaded_idx ON resumes(user_id, uploaded_at DESC)');
+
   const findUserByEmail = database.prepare('SELECT * FROM users WHERE email = ?');
   const findUserById = database.prepare('SELECT id, name, email FROM users WHERE id = ?');
   const insertUser = database.prepare('INSERT INTO users (name, email, password_salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?)');
@@ -103,6 +131,46 @@ function createAuthApp({
   const insertJob = database.prepare(`INSERT INTO jobs (user_id, company_name, position, job_url, date_applied, status, job_description, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const updateJob = database.prepare(`UPDATE jobs SET company_name = ?, position = ?, job_url = ?, date_applied = ?, status = ?, job_description = ?, notes = ?, updated_at = ? WHERE id = ? AND user_id = ?`);
   const deleteJob = database.prepare('DELETE FROM jobs WHERE id = ? AND user_id = ?');
+  const resumeMetadataFields = 'id, file_name AS fileName, file_size AS fileSize, uploaded_at AS uploadedAt';
+  const listResumes = database.prepare(`SELECT ${resumeMetadataFields} FROM resumes WHERE user_id = ? ORDER BY uploaded_at DESC, id DESC`);
+  const findLatestResumeMetadata = database.prepare(`SELECT ${resumeMetadataFields} FROM resumes WHERE user_id = ? ORDER BY uploaded_at DESC, id DESC LIMIT 1`);
+  const findResumeMetadataById = database.prepare(`SELECT ${resumeMetadataFields} FROM resumes WHERE id = ? AND user_id = ?`);
+  const findResumeFile = database.prepare('SELECT file_name AS fileName, pdf_data AS pdfData FROM resumes WHERE id = ? AND user_id = ?');
+  const findLatestResumeFile = database.prepare('SELECT file_name AS fileName, pdf_data AS pdfData FROM resumes WHERE user_id = ? ORDER BY uploaded_at DESC, id DESC LIMIT 1');
+  const saveResume = database.prepare('INSERT INTO resumes (user_id, file_name, file_size, pdf_data, uploaded_at) VALUES (?, ?, ?, ?, ?)');
+  const uploadResume = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0 },
+  });
+  const handleResumeUpload = (request, response) => {
+    const file = request.file;
+    if (!file) return response.status(400).json({ error: 'Choose a PDF file to upload.' });
+    if (file.mimetype !== 'application/pdf' || !file.originalname.toLowerCase().endsWith('.pdf') || file.buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+      return response.status(400).json({ error: 'The selected file must be a valid PDF.' });
+    }
+
+    const originalBaseName = path.basename(file.originalname.replace(/\\/g, '/'), path.extname(file.originalname));
+    const safeBaseName = originalBaseName.replace(/[^A-Za-z0-9._ -]/g, '_').trim().slice(0, 100) || 'resume';
+    const fileName = `${safeBaseName}.pdf`;
+    const result = saveResume.run(request.user.id, fileName, file.size, file.buffer, Date.now());
+    return response.status(201).json({ resume: findResumeMetadataById.get(Number(result.lastInsertRowid), request.user.id) });
+  };
+  const sendResumeFile = (request, response, inline, latest = false) => {
+    let resume;
+    if (latest) {
+      resume = findLatestResumeFile.get(request.user.id);
+    } else {
+      const id = Number(request.params.id);
+      if (!Number.isSafeInteger(id) || id < 1) return response.status(400).json({ error: 'Choose a valid resume.' });
+      resume = findResumeFile.get(id, request.user.id);
+    }
+    if (!resume) return response.status(404).json({ error: 'Resume not found.' });
+    response.set('Cache-Control', 'private, no-store');
+    response.type('application/pdf');
+    if (inline) response.set('Content-Disposition', `inline; filename="${resume.fileName}"`);
+    else response.attachment(resume.fileName);
+    return response.send(resume.pdfData);
+  };
   const replacePasswordReset = database.transaction((userId, tokenHash, expiresAt, createdAt) => {
     deleteUserPasswordResets.run(userId);
     insertPasswordReset.run(tokenHash, userId, expiresAt, createdAt);
@@ -422,6 +490,21 @@ function createAuthApp({
     return response.json({ ok: true });
   });
 
+  app.get('/api/resumes', requireAuthentication, (request, response) => {
+    return response.json({ resumes: listResumes.all(request.user.id) });
+  });
+
+  app.post('/api/resumes', requireAuthentication, uploadResume.single('resume'), handleResumeUpload);
+  app.get('/api/resumes/:id/view', requireAuthentication, (request, response) => sendResumeFile(request, response, true));
+  app.get('/api/resumes/:id/download', requireAuthentication, (request, response) => sendResumeFile(request, response, false));
+
+  app.get('/api/resume', requireAuthentication, (request, response) => {
+    return response.json({ resume: findLatestResumeMetadata.get(request.user.id) || null });
+  });
+  app.post('/api/resume', requireAuthentication, uploadResume.single('resume'), handleResumeUpload);
+  app.get('/api/resume/download', requireAuthentication, (request, response) => sendResumeFile(request, response, false, true));
+  app.get('/api/resume/view', requireAuthentication, (request, response) => sendResumeFile(request, response, true, true));
+
   if (production) {
     const buildDirectory = path.join(__dirname, '..', 'build');
     app.use(express.static(buildDirectory));
@@ -433,6 +516,11 @@ function createAuthApp({
 
   app.use((error, request, response, next) => {
     if (response.headersSent) return next(error);
+    if (error instanceof multer.MulterError) {
+      const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      const message = error.code === 'LIMIT_FILE_SIZE' ? 'Resume files must be 10 MB or smaller.' : 'Upload one PDF file at a time.';
+      return response.status(status).json({ error: message });
+    }
     if (error.type === 'entity.parse.failed') return response.status(400).json({ error: 'Request body must be valid JSON.' });
     console.error(error);
     return response.status(500).json({ error: 'Something went wrong. Please try again.' });

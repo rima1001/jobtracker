@@ -1,12 +1,17 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { after, before, test } = require('node:test');
 const { createServer } = require('node:http');
+const Database = require('better-sqlite3');
 const { createAuthApp } = require('./index');
 
 let authApp;
 let server;
 let baseUrl;
 let loginSessionCookie;
+let secondAccountCookie;
 const sentRecoveryEmails = [];
 const appBasePath = '/rima1001/jobtracke';
 
@@ -38,6 +43,12 @@ const jobRequest = (method, route = '', payload, cookie) => fetch(`${baseUrl}${a
   method,
   headers: { ...(payload ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
   body: payload ? JSON.stringify(payload) : undefined,
+});
+
+const resumeRequest = (method, route = '', cookie, body) => fetch(`${baseUrl}${appBasePath}/api/resumes${route}`, {
+  method,
+  headers: cookie ? { Cookie: cookie } : undefined,
+  body,
 });
 
 test('registers an account, creates an authenticated session, and logs out', async () => {
@@ -103,10 +114,10 @@ test('stores jobs per user and supports creating, updating, and deleting them', 
     password: 'another-secure-passphrase',
   });
   assert.equal(secondAccount.status, 200);
-  const secondCookie = secondAccount.headers.get('set-cookie').split(';')[0];
-  const otherUserJobs = await jobRequest('GET', '', undefined, secondCookie);
+  secondAccountCookie = secondAccount.headers.get('set-cookie').split(';')[0];
+  const otherUserJobs = await jobRequest('GET', '', undefined, secondAccountCookie);
   assert.deepEqual((await otherUserJobs.json()).jobs, []);
-  const cannotEditOtherJob = await jobRequest('PATCH', `/${created.id}`, { status: 'Interview' }, secondCookie);
+  const cannotEditOtherJob = await jobRequest('PATCH', `/${created.id}`, { status: 'Interview' }, secondAccountCookie);
   assert.equal(cannotEditOtherJob.status, 404);
 
   const updatedResponse = await jobRequest('PATCH', `/${created.id}`, { status: 'Interview' }, loginSessionCookie);
@@ -115,6 +126,92 @@ test('stores jobs per user and supports creating, updating, and deleting them', 
   const deleted = await jobRequest('DELETE', `/${created.id}`, undefined, loginSessionCookie);
   assert.equal(deleted.status, 200);
   assert.deepEqual((await (await jobRequest('GET', '', undefined, loginSessionCookie)).json()).jobs, []);
+});
+
+test('attaches and downloads private PDF resumes per user', async () => {
+  assert.equal((await resumeRequest('GET')).status, 401);
+  const secondAccountResume = await resumeRequest('GET', '', secondAccountCookie);
+  assert.deepEqual((await secondAccountResume.json()).resumes, []);
+
+  const pdfBytes = Buffer.from('%PDF-1.7\nresume content\n%%EOF');
+  const firstForm = new FormData();
+  firstForm.append('resume', new Blob([pdfBytes], { type: 'application/pdf' }), 'alex-resume.pdf');
+  const upload = await resumeRequest('POST', '', loginSessionCookie, firstForm);
+  assert.equal(upload.status, 201);
+  const storedResume = (await upload.json()).resume;
+  assert.equal(storedResume.fileName, 'alex-resume.pdf');
+  assert.equal(storedResume.fileSize, pdfBytes.length);
+
+  const download = await resumeRequest('GET', `/${storedResume.id}/download`, loginSessionCookie);
+  assert.equal(download.status, 200);
+  assert.match(download.headers.get('content-disposition'), /attachment/);
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()), pdfBytes);
+  const view = await resumeRequest('GET', `/${storedResume.id}/view`, loginSessionCookie);
+  assert.equal(view.status, 200);
+  assert.match(view.headers.get('content-disposition'), /inline/);
+  assert.match(view.headers.get('content-type'), /application\/pdf/);
+  assert.deepEqual(Buffer.from(await view.arrayBuffer()), pdfBytes);
+  assert.equal((await resumeRequest('GET', `/${storedResume.id}/download`, secondAccountCookie)).status, 404);
+
+  const invalidForm = new FormData();
+  invalidForm.append('resume', new Blob(['not a PDF'], { type: 'text/plain' }), 'not-a-resume.txt');
+  assert.equal((await resumeRequest('POST', '', loginSessionCookie, invalidForm)).status, 400);
+
+  const anotherForm = new FormData();
+  anotherForm.append('resume', new Blob([Buffer.from('%PDF-1.7\nsecond resume\n%%EOF')], { type: 'application/pdf' }), 'updated-resume.pdf');
+  const anotherUpload = await resumeRequest('POST', '', loginSessionCookie, anotherForm);
+  assert.equal(anotherUpload.status, 201);
+  const secondResume = (await anotherUpload.json()).resume;
+  assert.notEqual(secondResume.id, storedResume.id);
+  const list = await resumeRequest('GET', '', loginSessionCookie);
+  const listedResumes = (await list.json()).resumes;
+  assert.equal(listedResumes.length, 2);
+  assert.deepEqual(new Set(listedResumes.map((resume) => resume.fileName)), new Set(['alex-resume.pdf', 'updated-resume.pdf']));
+});
+
+test('migrates existing single-resume accounts and preserves the uploaded PDF', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jobtracker-resume-migration-'));
+  const databasePath = path.join(directory, 'jobtracker.sqlite');
+  const legacyDatabase = new Database(databasePath);
+  legacyDatabase.pragma('foreign_keys = ON');
+  legacyDatabase.exec(`
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      password_salt TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE resumes (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      pdf_data BLOB NOT NULL,
+      uploaded_at INTEGER NOT NULL
+    );
+  `);
+  legacyDatabase.prepare('INSERT INTO users (name, email, password_salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run('Alex Morgan', 'alex@example.com', 'salt', 'hash', Date.now());
+  const oldPdf = Buffer.from('%PDF-1.7\nexisting resume\n%%EOF');
+  legacyDatabase.prepare('INSERT INTO resumes (user_id, file_name, file_size, pdf_data, uploaded_at) VALUES (?, ?, ?, ?, ?)')
+    .run(1, 'existing-resume.pdf', oldPdf.length, oldPdf, Date.now());
+  legacyDatabase.close();
+
+  const upgradedApp = createAuthApp({ databasePath, basePath: appBasePath, production: false, appOrigin: '' });
+  try {
+    const migrated = upgradedApp.database.prepare('SELECT file_name, pdf_data FROM resumes WHERE user_id = ?').all(1);
+    assert.equal(migrated.length, 1);
+    assert.equal(migrated[0].file_name, 'existing-resume.pdf');
+    assert.deepEqual(migrated[0].pdf_data, oldPdf);
+
+    upgradedApp.database.prepare('INSERT INTO resumes (user_id, file_name, file_size, pdf_data, uploaded_at) VALUES (?, ?, ?, ?, ?)')
+      .run(1, 'second-resume.pdf', 5, Buffer.from('%PDF-'), Date.now());
+    assert.equal(upgradedApp.database.prepare('SELECT COUNT(*) AS count FROM resumes WHERE user_id = ?').get(1).count, 2);
+  } finally {
+    upgradedApp.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('sends generic recovery instructions and consumes reset tokens once', async () => {

@@ -1,6 +1,11 @@
 .auth-page { background: #f3f7f5; color: #263732; font-family: 'DM Sans', sans-serif; isolation: isolate; min-height: 100vh; overflow: hidden; padding: 0 7vw 50px; position: relative; }
 .auth-glow { background: #e1f1ec; border-radius: 50%; height: 720px; position: absolute; right: -250px; top: -380px; width: 720px; z-index: -1; }
-.auth-brand { margin: 28px 0 0; position: relative; z-index: 1; }
+.auth-brand-row { align-items: center; display: flex; gap: 14px; margin: 28px 0 0; position: relative; z-index: 1; }
+.auth-brand { margin: 0; }
+.auth-home-button { align-items: center; background: #fff; border: 1px solid #dce6e1; border-radius: 50%; color: #60736a; display: inline-flex; height: 36px; justify-content: center; transition: background .15s, border-color .15s, color .15s; width: 36px; }
+.auth-home-button:hover { background: #eaf4ef; border-color: #a9cfc1; color: #10796f; }
+.auth-home-button:focus-visible { box-shadow: 0 0 0 3px #def2ed; outline: none; }
+.auth-home-button svg { height: 19px; width: 19px; }
 .auth-layout { align-items: center; display: grid; gap: clamp(55px, 11vw, 170px); grid-template-columns: 1fr minmax(350px, 440px); margin: 9vh auto 0; max-width: 1130px; }
 .auth-story { max-width: 525px; padding-bottom: 20px; }
 .auth-eyebrow { align-items: center; color: #73827c; display: flex; font-size: 11px; font-weight: 700; gap: 9px; letter-spacing: 1.5px; margin: 0; }

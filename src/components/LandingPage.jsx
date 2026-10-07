@@ -18,7 +18,6 @@ const LandingPage = () => {
           <a href="#dashboard">Dashboard</a>
           <a href="#login">Log in</a>
         </div>
-        <a className="nav-cta" href="#signup">Get started <span aria-hidden="true">↗</span></a>
       </nav>
 
       <section className="hero" id="top">

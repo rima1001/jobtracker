@@ -4,6 +4,7 @@ import DashboardPage from './components/DashboardPage';
 import JobTrackerPage from './components/JobTrackerPage';
 import LandingPage from './components/LandingPage';
 import RecoveryPage from './components/RecoveryPage';
+import ResumePage from './components/ResumePage';
 import { getCurrentUser, logout } from './lib/auth';
 
 const getScreen = () => {
@@ -12,6 +13,7 @@ const getScreen = () => {
   if (window.location.hash === '#dashboard') return 'dashboard';
   if (window.location.hash === '#tracker') return 'tracker';
   if (window.location.hash === '#profile') return 'profile';
+  if (window.location.hash === '#resume') return 'resume';
   return 'landing';
 };
 
@@ -56,9 +58,10 @@ const App = () => {
     const resetToken = window.location.hash.startsWith('#reset/') ? window.location.hash.slice('#reset/'.length) : '';
     return <RecoveryPage resetToken={resetToken} onAuthenticated={handleAuthenticated} />;
   }
-  if (['dashboard', 'tracker', 'profile'].includes(screen) && !user) {
+  if (['dashboard', 'tracker', 'profile', 'resume'].includes(screen) && !user) {
     return <AuthPage initialMode="login" onAuthenticated={handleAuthenticated} />;
   }
+  if (user && screen === 'resume') return <ResumePage user={user} onLogout={handleLogout} />;
   if (user && (screen === 'tracker' || screen === 'profile')) {
     return <JobTrackerPage key={screen} initialTab={screen === 'profile' ? 'profile' : 'jobs'} user={user} onLogout={handleLogout} />;
   }

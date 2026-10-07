@@ -144,6 +144,7 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
         </div>
         <div className="job-header-actions">
           <a className="job-dashboard-link" href="#dashboard">Dashboard</a>
+          <a className="job-dashboard-link" href="#resume">My Resume</a>
           <button className="job-signout" onClick={onLogout} type="button">Sign out</button>
         </div>
       </header>

@@ -25,9 +25,6 @@ a { color: inherit; text-decoration: none; }
 .nav-links a, .text-link, .site-footer a { transition: color .2s ease; }
 .nav-links a:hover, .text-link:hover, .site-footer a:hover { color: var(--accent); }
 .nav-links a:last-child { color: var(--accent); font-weight: 700; }
-.nav-cta { align-items: center; border: 1px solid #dce6e1; border-radius: 99px; display: flex; font-size: 14px; font-weight: 700; gap: 12px; padding: 11px 16px; transition: background .2s, border-color .2s; }
-.nav-cta:hover { background: white; border-color: #9fcfc1; }
-.nav-cta span { font-size: 15px; }
 .hero { align-items: center; display: grid; gap: 58px; grid-template-columns: .92fr 1.08fr; margin: auto; max-width: 1220px; min-height: 650px; padding: 50px 32px 105px; }
 .hero-copy { padding-bottom: 12px; }
 .eyebrow, .muted-label { color: #73827c; font-size: 11px; font-weight: 700; letter-spacing: 1.4px; }
@@ -127,7 +124,6 @@ a { color: inherit; text-decoration: none; }
   .nav-links { display: flex; }
   .nav-links a:not(:nth-last-child(-n+2)) { display: none; }
   .nav-links { margin-left: auto; margin-right: 14px; }
-  .nav-cta { font-size: 12px; padding: 9px 12px; }
   .hero { gap: 47px; padding: 52px 20px 68px; }
   .hero h1 { font-size: clamp(44px, 12vw, 62px); letter-spacing: -3px; }
   .hero-description { font-size: 15px; }

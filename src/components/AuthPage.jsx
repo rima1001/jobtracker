@@ -37,7 +37,14 @@ const AuthPage = ({ initialMode = 'login', onAuthenticated }) => {
   return (
     <main className="auth-page">
       <div className="auth-glow" aria-hidden="true" />
-      <a className="brand auth-brand" href="#top"><span className="brand-mark" aria-hidden="true">T</span><span>trackwise</span></a>
+      <div className="auth-brand-row">
+        <a className="brand auth-brand" href="#top"><span className="brand-mark" aria-hidden="true">T</span><span>trackwise</span></a>
+        <a aria-label="Home" className="auth-home-button" href="#top" title="Home">
+          <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+            <path d="m3.75 10.25 8.25-7 8.25 7M5.75 8.75v11h12.5v-11M9.5 19.75v-6.5h5v6.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+          </svg>
+        </a>
+      </div>
       <div className="auth-layout">
         <section className="auth-story">
           <div className="auth-eyebrow"><span className="status-dot" /> A BETTER WAY FORWARD</div>
@@ -80,7 +87,6 @@ const AuthPage = ({ initialMode = 'login', onAuthenticated }) => {
           </form>
 
           <p className="auth-legal">By continuing, you agree to use Trackwise to manage your own job search.</p>
-          <a className="auth-back" href="#top">← Back to Trackwise</a>
         </section>
       </div>
     </main>

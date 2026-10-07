@@ -40,6 +40,7 @@ const DashboardPage = ({ user, onLogout }) => {
       <nav className="dashboard-nav" aria-label="Your workspace">
         <a aria-current="page" className="is-active" href="#dashboard">Overview</a>
         <a href="#tracker">Job Tracker</a>
+        <a href="#resume">My Resume</a>
         <a href="#profile">My Profile</a>
       </nav>
 
