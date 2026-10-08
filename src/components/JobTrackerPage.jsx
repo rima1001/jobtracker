@@ -17,6 +17,18 @@ const formatInterviewAt = (value) => {
     : parsedDate.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 };
 
+const splitInterviewAt = (value = '') => {
+  const [date = '', time = ''] = value.split('T');
+  return { date, time };
+};
+
+const updateInterviewAtPart = (value, part, nextValue) => {
+  const current = splitInterviewAt(value);
+  const date = part === 'date' ? nextValue : current.date;
+  const time = part === 'time' ? nextValue : current.time;
+  return date || time ? `${date}T${time}` : '';
+};
+
 const createEmptyJob = () => ({
   company: '',
   position: '',
@@ -42,6 +54,8 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
   const [interviewError, setInterviewError] = React.useState('');
   const [error, setError] = React.useState('');
   const [message, setMessage] = React.useState('');
+  const formInterviewAt = splitInterviewAt(form.interviewAt);
+  const dialogInterviewAt = splitInterviewAt(interviewAt);
 
   React.useEffect(() => {
     let active = true;
@@ -231,10 +245,16 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
                 </label>
               </div>
               {form.status === 'Interview' && (
-                <label className="job-field">
-                  <span>Interview date &amp; time</span>
-                  <input name="interviewAt" onChange={handleFieldChange} required type="datetime-local" value={form.interviewAt} />
-                </label>
+                <div className="job-form-row interview-date-row">
+                  <label className="job-field">
+                    <span>Interview date</span>
+                    <input onChange={(event) => setForm((current) => ({ ...current, interviewAt: updateInterviewAtPart(current.interviewAt, 'date', event.target.value) }))} required type="date" value={formInterviewAt.date} />
+                  </label>
+                  <label className="job-field">
+                    <span>Interview time</span>
+                    <input onChange={(event) => setForm((current) => ({ ...current, interviewAt: updateInterviewAtPart(current.interviewAt, 'time', event.target.value) }))} required type="time" value={formInterviewAt.time} />
+                  </label>
+                </div>
               )}
               <label className="job-field">
                 <span>Job description <small>(optional)</small></span>
@@ -314,10 +334,16 @@ const JobTrackerPage = ({ initialTab = 'jobs', user, onLogout }) => {
             <h2 id="interview-dialog-title">Schedule the interview</h2>
             <p>{interviewCandidate.company} · {interviewCandidate.position}</p>
             <form onSubmit={handleInterviewScheduleSubmit}>
-              <label className="job-field">
-                <span>Interview date &amp; time</span>
-                <input autoFocus name="interviewAt" onChange={(event) => setInterviewAt(event.target.value)} required type="datetime-local" value={interviewAt} />
-              </label>
+              <div className="job-form-row interview-date-row">
+                <label className="job-field">
+                  <span>Interview date</span>
+                  <input autoFocus onChange={(event) => setInterviewAt((current) => updateInterviewAtPart(current, 'date', event.target.value))} required type="date" value={dialogInterviewAt.date} />
+                </label>
+                <label className="job-field">
+                  <span>Interview time</span>
+                  <input onChange={(event) => setInterviewAt((current) => updateInterviewAtPart(current, 'time', event.target.value))} required type="time" value={dialogInterviewAt.time} />
+                </label>
+              </div>
               {interviewError && <p className="job-dialog-error" role="alert">{interviewError}</p>}
               <div className="job-dialog-actions">
                 <button className="job-dialog-cancel" disabled={updatingId === interviewCandidate.id} onClick={() => { setInterviewCandidate(null); setInterviewAt(''); setInterviewError(''); }} type="button">Cancel</button>
